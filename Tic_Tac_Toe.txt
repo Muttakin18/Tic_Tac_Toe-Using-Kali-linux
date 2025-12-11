@@ -1,0 +1,178 @@
+#!/bin/bash
+
+# File to store user information and scores
+USER_FILE="users.txt"
+
+# Initialize variables
+current_user=""
+player1=""
+player2=""
+
+# Function to register a new user
+register() {
+    echo "--- Register ---"
+    read -p "Enter username: " username
+    read -s -p "Enter password: " password
+    echo
+
+    # Check if username already exists
+    if grep -q "^$username:" "$USER_FILE"; then
+        echo "Username already exists. Try a different username."
+        return
+    fi
+
+    # Add user to the file
+    echo "$username:$password:0" >> "$USER_FILE"
+    echo "Registration successful!"
+}
+
+# Function to login
+login() {
+    echo "--- Login ---"
+    read -p "Enter username: " username
+    read -s -p "Enter password: " password
+    echo
+
+    # Validate user credentials
+    if grep -q "^$username:$password:" "$USER_FILE"; then
+        echo "Login successful!"
+        current_user="$username"
+
+        # Assign players for the match
+        if [[ -z "$player1" ]]; then
+            player1="$username"
+        elif [[ -z "$player2" && "$username" != "$player1" ]]; then
+            player2="$username"
+        fi
+    else
+        echo "Invalid username or password."
+    fi
+}
+
+# Function to manage profile
+manage_profile() {
+    echo "--- Manage Profile ---"
+    if [[ -z "$current_user" ]]; then
+        echo "No user is logged in."
+        return
+    fi
+
+    echo "Logged in as: $current_user"
+    read -p "Enter new username: " new_username
+    read -s -p "Enter new password: " new_password
+    echo
+
+    # Update user information in the file
+    sed -i "s/^$current_user:.*/$new_username:$new_password:$(get_score $current_user)/" "$USER_FILE"
+    echo "Profile updated!"
+    current_user="$new_username"
+
+    # Update player variables if they are in use
+    if [[ "$player1" == "$current_user" ]]; then
+        player1="$new_username"
+    fi
+    if [[ "$player2" == "$current_user" ]]; then
+        player2="$new_username"
+    fi
+}
+
+# Function to get a user's score
+get_score() {
+    grep "^$1:" "$USER_FILE" | cut -d: -f3
+}
+
+# Function to update a user's score
+update_score() {
+    local username=$1
+    local score=$(get_score "$username")
+    local new_score=$((score + 1))
+    sed -i "s/^$username:.*/$username:$(grep "^$username:" "$USER_FILE" | cut -d: -f2):$new_score/" "$USER_FILE"
+}
+
+# Function to display the dashboard
+see_dashboard() {
+    echo "--- Dashboard ---"
+    awk -F: '{printf "%-15s %s\n", $1, $3}' "$USER_FILE" | column -t -s " "
+}
+
+# Function to play Tic-Tac-Toe
+start_match() {
+    if [[ -z "$player1" || -z "$player2" ]]; then
+        echo "Two players need to be logged in to start a match."
+        return
+    fi
+
+    echo "--- Tic-Tac-Toe ---"
+    declare -a board=("1" "2" "3" "4" "5" "6" "7" "8" "9")
+    current_player="$player1"
+
+    draw_board() {
+        echo " ${board[0]} | ${board[1]} | ${board[2]} "
+        echo "---+---+---"
+        echo " ${board[3]} | ${board[4]} | ${board[5]} "
+        echo "---+---+---"
+        echo " ${board[6]} | ${board[7]} | ${board[8]} "
+    }
+
+    check_winner() {
+        local combos=("0 1 2" "3 4 5" "6 7 8" "0 3 6" "1 4 7" "2 5 8" "0 4 8" "2 4 6")
+        for combo in "${combos[@]}"; do
+            set -- $combo
+            if [[ "${board[$1]}" == "${board[$2]}" && "${board[$2]}" == "${board[$3]}" && "${board[$1]}" != " " ]]; then
+                echo 1
+                return
+            fi
+        done
+        echo 0
+    }
+
+    moves=0
+    while [[ $moves -lt 9 ]]; do
+        draw_board
+        echo "$current_player's turn."
+        read -p "Enter position (1-9): " pos
+        pos=$((pos - 1))
+
+        if [[ "${board[$pos]}" != "$((pos + 1))" || $pos -lt 0 || $pos -gt 8 ]]; then
+            echo "Invalid move. Try again."
+            continue
+        fi
+
+        board[$pos]=$(if [[ "$current_player" == "$player1" ]]; then echo "X"; else echo "O"; fi)
+        moves=$((moves + 1))
+
+        if [[ $(check_winner) -eq 1 ]]; then
+            draw_board
+            echo "$current_player wins!"
+            update_score "$current_player"
+            return
+        fi
+
+        current_player=$(if [[ "$current_player" == "$player1" ]]; then echo "$player2"; else echo "$player1"; fi)
+    done
+
+    echo "It's a draw!"
+}
+
+# Main menu
+while true; do
+    echo "--- Main Menu ---"
+    echo "1. Register"
+    echo "2. Login"
+    echo "3. Manage Profile"
+    echo "4. Start Match"
+    echo "5. See Dashboard"
+    echo "6. Exit"
+    read -p "Choose an option: " choice
+
+    case $choice in
+        1) register ;;
+        2) login ;;
+        3) manage_profile ;;
+        4) start_match ;;
+        5) see_dashboard ;;
+        6) exit 0 ;;
+        *) echo "Invalid option." ;;
+    esac
+
+done
